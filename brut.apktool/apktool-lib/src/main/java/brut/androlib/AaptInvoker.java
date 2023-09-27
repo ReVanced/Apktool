@@ -23,6 +23,9 @@ import brut.util.AaptManager;
 import brut.util.OS;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.logging.Logger;
 
@@ -244,6 +247,35 @@ public class AaptInvoker {
             LOGGER.fine(cmd.toString());
         } catch (BrutException ex) {
             throw new AndrolibException(ex);
+        }
+
+        if (mConfig.shortenResourcePaths) {
+            Path inputFilePath = new File(apkFile.getParent(), apkFile.getName() + ".tmp").toPath();
+            Path apkFilePath = apkFile.toPath();
+            try {
+                Files.copy(apkFilePath, inputFilePath, StandardCopyOption.REPLACE_EXISTING);
+                Files.delete(apkFilePath);
+            } catch (IOException e) {
+                throw new AndrolibException(e);
+            }
+
+            cmd = new ArrayList<>(compileCommand);
+            cmd.add("optimize");
+
+            cmd.add("-o");
+            cmd.add(apkFilePath.toString());
+
+            cmd.add("--shorten-resource-paths");
+
+            cmd.add(inputFilePath.toString());
+
+            try {
+                OS.exec(cmd.toArray(new String[0]));
+                LOGGER.fine("aapt2 optimize command ran: ");
+                LOGGER.fine(cmd.toString());
+            } catch (BrutException ex) {
+                throw new AndrolibException(ex);
+            }
         }
     }
 

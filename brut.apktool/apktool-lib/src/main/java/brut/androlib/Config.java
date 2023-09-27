@@ -53,6 +53,7 @@ public class Config {
     public boolean updateFiles = false;
     public boolean useAapt2 = true;
     public boolean noCrunch = false;
+    public boolean shortenResourcePaths = false;
 
     // Decode options
     public short decodeSources = DECODE_SOURCES_SMALI;
