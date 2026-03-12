@@ -42,6 +42,8 @@ public class ResTable {
     private final ApkInfo mApkInfo;
     private final Map<Integer, ResPackage> mPackagesById;
     private final Map<String, ResPackage> mPackagesByName;
+    private final Map<ResID, ResResSpec> mAuxiliaryResSpecs;
+    private final Map<String, ResResSpec> mAuxiliaryResSpecsByName;
     private final Set<ResPackage> mMainPackages;
     private final Set<ResPackage> mFramePackages;
 
@@ -63,6 +65,8 @@ public class ResTable {
         mApkInfo = apkInfo;
         mPackagesById = new HashMap<>();
         mPackagesByName = new HashMap<>();
+        mAuxiliaryResSpecs = new LinkedHashMap<>();
+        mAuxiliaryResSpecsByName = new LinkedHashMap<>();
         mMainPackages = new LinkedHashSet<>();
         mFramePackages = new LinkedHashSet<>();
     }
@@ -91,6 +95,16 @@ public class ResTable {
     }
 
     public ResResSpec getResSpec(ResID resID) throws AndrolibException {
+        ResPackage pkg = mPackagesById.get(resID.pkgId);
+        if (pkg != null && pkg.hasResSpec(resID)) {
+            return pkg.getResSpec(resID);
+        }
+
+        ResResSpec auxiliarySpec = mAuxiliaryResSpecs.get(resID);
+        if (auxiliarySpec != null) {
+            return auxiliarySpec;
+        }
+
         return getPackage(resID.pkgId).getResSpec(resID);
     }
 
@@ -131,27 +145,25 @@ public class ResTable {
     }
 
     public void loadMainPkg(ExtFile apkFile) throws AndrolibException {
-        LOGGER.info("Loading resource table...");
-        ResPackage[] pkgs = loadResPackagesFromApk(apkFile, mConfig.keepBrokenResources);
-        ResPackage pkg;
-
-        switch (pkgs.length) {
-            case 0:
-                pkg = new ResPackage(this, 0, null);
-                break;
-            case 1:
-                pkg = pkgs[0];
-                break;
-            case 2:
-                LOGGER.warning("Skipping package group: " + pkgs[0].getName());
-                pkg = pkgs[1];
-                break;
-            default:
-                pkg = selectPkgWithMostResSpecs(pkgs);
-                break;
+        if (mMainPkgLoaded) {
+            return;
         }
+
+        LOGGER.info("Loading resource table...");
+        ResPackage pkg = selectPkg(loadResPackagesFromApk(apkFile, mConfig.keepBrokenResources));
         addPackage(pkg, true);
         mMainPkgLoaded = true;
+    }
+
+    public void loadAuxiliaryPkg(ExtFile apkFile) throws AndrolibException {
+        LOGGER.info("Loading auxiliary resource table from file: " + apkFile);
+        addAuxiliaryPackage(selectPkg(loadResPackagesFromApk(apkFile, mConfig.keepBrokenResources)));
+    }
+
+    public void loadAuxiliaryPkgs(Collection<ExtFile> apkFiles) throws AndrolibException {
+        for (ExtFile apkFile : apkFiles) {
+            loadAuxiliaryPkg(apkFile);
+        }
     }
 
     private ResPackage loadFrameworkPkg(int id) throws AndrolibException {
@@ -224,7 +236,32 @@ public class ResTable {
     }
 
     public ResValue getValue(String pkg, String type, String name) throws AndrolibException {
-        return getPackage(pkg).getType(type).getResSpec(name).getDefaultResource().getValue();
+        try {
+            return getPackage(pkg).getType(type).getResSpec(name).getDefaultResource().getValue();
+        } catch (UndefinedResObjectException ex) {
+            ResResSpec auxiliarySpec = mAuxiliaryResSpecsByName.get(getSpecNameKey(pkg, type, name));
+            if (auxiliarySpec == null) {
+                throw ex;
+            }
+            return auxiliarySpec.getDefaultResource().getValue();
+        }
+    }
+
+    public Collection<ResResSpec> listResSpecs(ResPackage pkg, boolean includeAuxiliary) {
+        if (!includeAuxiliary) {
+            return pkg.listResSpecs();
+        }
+
+        Map<ResID, ResResSpec> specs = new LinkedHashMap<>();
+        for (ResResSpec spec : pkg.listResSpecs()) {
+            specs.put(spec.getId(), spec);
+        }
+        for (ResResSpec spec : mAuxiliaryResSpecs.values()) {
+            if (spec.getId().pkgId == pkg.getId()) {
+                specs.putIfAbsent(spec.getId(), spec);
+            }
+        }
+        return specs.values();
     }
 
     public void addPackage(ResPackage pkg, boolean main) throws AndrolibException {
@@ -243,6 +280,12 @@ public class ResTable {
             mMainPackages.add(pkg);
         } else {
             mFramePackages.add(pkg);
+        }
+    }
+
+    void addAuxiliaryPackage(ResPackage pkg) {
+        for (ResResSpec spec : pkg.listResSpecs()) {
+            addAuxiliaryResSpec(spec);
         }
     }
 
@@ -380,5 +423,45 @@ public class ResTable {
         if (refValue != null) {
             mApkInfo.versionInfo.versionName = refValue;
         }
+    }
+
+    private ResPackage selectPkg(ResPackage[] pkgs) {
+        switch (pkgs.length) {
+            case 0:
+                return new ResPackage(this, 0, null);
+            case 1:
+                return pkgs[0];
+            case 2:
+                LOGGER.warning("Skipping package group: " + pkgs[0].getName());
+                return pkgs[1];
+            default:
+                return selectPkgWithMostResSpecs(pkgs);
+        }
+    }
+
+    private void addAuxiliaryResSpec(ResResSpec spec) {
+        ResResSpec existingSpec = mAuxiliaryResSpecs.get(spec.getId());
+        if (existingSpec != null) {
+            if (!existingSpec.getName().equals(spec.getName())
+                    || !existingSpec.getType().getName().equals(spec.getType().getName())) {
+                LOGGER.warning("Ignoring conflicting auxiliary resource spec: " + spec);
+            }
+            return;
+        }
+
+        mAuxiliaryResSpecs.put(spec.getId(), spec);
+
+        String key = getSpecNameKey(spec.getPackage().getName(), spec.getType().getName(), spec.getName());
+        ResResSpec existingNamedSpec = mAuxiliaryResSpecsByName.get(key);
+        if (existingNamedSpec != null && !existingNamedSpec.getId().equals(spec.getId())) {
+            LOGGER.warning("Ignoring conflicting auxiliary resource name: " + key);
+            return;
+        }
+
+        mAuxiliaryResSpecsByName.putIfAbsent(key, spec);
+    }
+
+    private String getSpecNameKey(String pkg, String type, String name) {
+        return pkg + ":" + type + "/" + name;
     }
 }
