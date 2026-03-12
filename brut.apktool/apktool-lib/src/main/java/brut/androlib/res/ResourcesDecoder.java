@@ -47,6 +47,7 @@ public class ResourcesDecoder {
     private final ApkInfo mApkInfo;
     private final ResTable mResTable;
     private final Map<String, String> mResFileMapping;
+    private boolean mIncludeAuxiliaryPublicXml;
 
     public ResourcesDecoder(Config config, ApkInfo apkInfo) {
         mConfig = config;
@@ -69,6 +70,18 @@ public class ResourcesDecoder {
 
     public void loadMainPkg() throws AndrolibException {
         mResTable.loadMainPkg(mApkInfo.getApkFile());
+    }
+
+    public void loadAuxiliaryPkg(ExtFile apkFile) throws AndrolibException {
+        mResTable.loadAuxiliaryPkg(apkFile);
+    }
+
+    public void loadAuxiliaryPkgs(Collection<ExtFile> apkFiles) throws AndrolibException {
+        mResTable.loadAuxiliaryPkgs(apkFiles);
+    }
+
+    public void setIncludeAuxiliaryPublicXml(boolean includeAuxiliaryPublicXml) {
+        mIncludeAuxiliaryPublicXml = includeAuxiliaryPublicXml;
     }
 
     public void decodeManifest(File apkDir) throws AndrolibException {
@@ -158,7 +171,7 @@ public class ResourcesDecoder {
             return;
         }
 
-        mResTable.loadMainPkg(mApkInfo.getApkFile());
+        loadMainPkg();
 
         ResStreamDecoderContainer decoders = new ResStreamDecoderContainer();
         decoders.setDecoder("raw", new ResRawStreamDecoder());
@@ -193,7 +206,7 @@ public class ResourcesDecoder {
                 generateValuesFile(valuesFile, outDir, xmlSerializer);
             }
 
-            generatePublicXml(pkg, outDir, xmlSerializer);
+            generatePublicXml(pkg, outDir, xmlSerializer, mIncludeAuxiliaryPublicXml);
         }
 
         AndrolibException decodeError = axmlParser.getFirstError();
@@ -237,14 +250,14 @@ public class ResourcesDecoder {
         }
     }
 
-    private void generatePublicXml(ResPackage pkg, Directory resDir, XmlSerializer serial)
+    private void generatePublicXml(ResPackage pkg, Directory resDir, XmlSerializer serial, boolean includeAuxiliary)
             throws AndrolibException {
         try (OutputStream out = resDir.getFileOutput("values/public.xml")) {
             serial.setOutput(out, null);
             serial.startDocument(null, null);
             serial.startTag(null, "resources");
 
-            for (ResResSpec spec : pkg.listResSpecs()) {
+            for (ResResSpec spec : mResTable.listResSpecs(pkg, includeAuxiliary)) {
                 serial.startTag(null, "public");
                 serial.attribute(null, "type", spec.getType().getName());
                 serial.attribute(null, "name", spec.getName());
