@@ -18,17 +18,19 @@ package brut.androlib.res.decoder;
 
 import brut.androlib.BaseTest;
 import brut.androlib.res.data.NinePatchData;
+import brut.androlib.res.decoder.ResNinePatchStreamDecoder.AwtNinePatchImageBackend;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.nio.file.Files;
 
-import org.junit.*;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 public class MissingDiv9PatchTest extends BaseTest {
 
@@ -43,7 +45,7 @@ public class MissingDiv9PatchTest extends BaseTest {
         byte[] data;
 
         try (InputStream in = Files.newInputStream(file.toPath())) {
-            ResNinePatchStreamDecoder decoder = new ResNinePatchStreamDecoder();
+            ResNinePatchStreamDecoder decoder = new ResNinePatchStreamDecoder(new AwtNinePatchImageBackend());
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             decoder.decode(in, out);
             data = out.toByteArray();

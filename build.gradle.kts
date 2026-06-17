@@ -1,7 +1,5 @@
-import java.io.ByteArrayOutputStream
-
 val version = "3.0.3"
-val suffix = "SNAPSHOT"
+val suffix = "1"
 
 // Strings embedded into the build.
 var gitRevision by extra("")
@@ -13,8 +11,8 @@ defaultTasks("build", "shadowJar", "proguard")
 val gitDescribe: String? by lazy {
     try {
         val result = providers.exec {
-            commandLine("git", "describe", "--tags")
-        }
+                commandLine("git", "describe", "--tags")
+            }
         result.standardOutput.asText.get().trim().replace("-g", "-")
     } catch (e: Exception) {
         null
@@ -24,8 +22,8 @@ val gitDescribe: String? by lazy {
 val gitBranch: String? by lazy {
     try {
         val result = providers.exec {
-            commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
-        }
+                commandLine("git", "rev-parse", "--abbrev-ref", "HEAD")
+            }
         result.standardOutput.asText.get().trim()
     } catch (e: Exception) {
         null
@@ -84,7 +82,7 @@ subprojects {
     val mavenProjects = arrayOf(
         "brut.j.common", "brut.j.util", "brut.j.dir", "brut.j.xml", "brut.j.yaml",
         "apktool-lib", "apktool-cli"
-    )
+        )
 
     if (project.name in mavenProjects && JavaVersion.current().isJava11Compatible) {
         apply(from = "${rootProject.projectDir}/gradle/scripts/publishing.gradle")

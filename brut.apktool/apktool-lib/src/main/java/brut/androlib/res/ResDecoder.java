@@ -18,26 +18,27 @@ package brut.androlib.res;
 
 import brut.androlib.Config;
 import brut.androlib.exceptions.AndrolibException;
-import brut.androlib.meta.ApkInfo;
-import brut.androlib.meta.ResourcesInfo;
-import brut.androlib.meta.SdkInfo;
-import brut.androlib.meta.UsesFramework;
-import brut.androlib.meta.VersionInfo;
+import brut.androlib.meta.*;
 import brut.androlib.res.decoder.*;
+import brut.androlib.res.decoder.ResNinePatchStreamDecoder.NinePatchImageBackend;
 import brut.androlib.res.table.*;
 import brut.androlib.res.table.value.ResBag;
 import brut.androlib.res.table.value.ResFileReference;
-import brut.androlib.res.xml.ResXmlUtils;
 import brut.androlib.res.xml.ResXmlSerializer;
+import brut.androlib.res.xml.ResXmlUtils;
 import brut.androlib.res.xml.ValuesXmlSerializable;
 import brut.common.Log;
 import brut.directory.Directory;
 import brut.directory.DirectoryException;
 import brut.directory.FileDirectory;
+import brut.util.OSDetection;
 import brut.util.Pair;
 import com.google.common.collect.Lists;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.*;
 
 public class ResDecoder {
@@ -72,7 +73,8 @@ public class ResDecoder {
 
         Map<ResFileDecoder.Type, ResStreamDecoder> decoders = new HashMap<>();
         decoders.put(ResFileDecoder.Type.UNKNOWN, new ResRawStreamDecoder());
-        decoders.put(ResFileDecoder.Type.PNG_9PATCH, new ResNinePatchStreamDecoder());
+        NinePatchImageBackend backend = OSDetection.isAndroid() ? new ResNinePatchStreamDecoder.AwtNinePatchImageBackend() : new ResNinePatchStreamDecoder.AndroidNinePatchImageBackend();
+        decoders.put(ResFileDecoder.Type.PNG_9PATCH, new ResNinePatchStreamDecoder(backend));
 
         BinaryXmlResourceParser parser = new BinaryXmlResourceParser(
             mTable, mConfig.isIgnoreRawValues(), mConfig.isDecodeResolveLazy());
@@ -125,7 +127,7 @@ public class ResDecoder {
     }
 
     private void generateValuesXmls(ResPackage pkg, Directory outDir, ResXmlSerializer serial)
-            throws AndrolibException {
+        throws AndrolibException {
         // Group entries by type name + qualifiers, ignoring alias duplicates in sub-packages.
         Map<Pair<String, String>, List<ResEntry>> entriesMap = new HashMap<>();
         for (ResEntry entry : listEntries(pkg)) {
@@ -166,7 +168,7 @@ public class ResDecoder {
     }
 
     private void generatePublicXml(ResPackage pkg, Directory outDir, ResXmlSerializer serial)
-            throws AndrolibException {
+        throws AndrolibException {
         List<ResEntrySpec> specs = Lists.newArrayList(pkg.listEntrySpecs());
         specs.sort(Comparator.comparing(ResEntrySpec::getResId));
 
@@ -192,7 +194,7 @@ public class ResDecoder {
     }
 
     private void generateStagingXmls(ResPackage pkg, Directory outDir, ResXmlSerializer serial)
-            throws AndrolibException {
+        throws AndrolibException {
         if (pkg.getId() != ResTable.SYS_PACKAGE_ID) {
             return;
         }
@@ -309,7 +311,7 @@ public class ResDecoder {
     }
 
     private void generateOverlayableXml(ResPackage pkg, Directory outDir, ResXmlSerializer serial)
-            throws AndrolibException {
+        throws AndrolibException {
         if (pkg.getOverlayableCount() == 0) {
             return;
         }
@@ -353,7 +355,7 @@ public class ResDecoder {
             outDir = new FileDirectory(apkDir);
 
             Log.i(TAG, "Decoding AndroidManifest.xml with " + (pkg != null ? "resources" : "only framework resources")
-                     + "...");
+                + "...");
             try (
                 InputStream in = inDir.getFileInput("AndroidManifest.xml");
                 OutputStream out = outDir.getFileOutput("AndroidManifest.xml")

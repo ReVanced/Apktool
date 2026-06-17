@@ -40,7 +40,7 @@ public class ApkDecoder {
 
     private static final Pattern NO_COMPRESS_EXT_PATTERN = Pattern.compile(
         "dex|arsc|so|jpg|jpeg|png|gif|wav|mp2|mp3|ogg|aac|mpg|mpeg|mid|midi|smf|jet|"
-      + "rtttl|imy|xmf|mp4|m4a|m4v|3gp|3gpp|3g2|3gpp2|amr|awb|wma|wmv|webm|webp|mkv");
+            + "rtttl|imy|xmf|mp4|m4a|m4v|3gp|3gpp|3g2|3gpp2|amr|awb|wma|wmv|webm|webp|mkv");
 
     private final ExtFile mApkFile;
     private final Config mConfig;
@@ -78,7 +78,7 @@ public class ApkDecoder {
             OS.mkdir(outDir);
 
             Log.i(TAG, "Using Apktool " + mConfig.getVersion() + " on " + mApkFile.getName()
-                     + (mWorker != null ? " with " + mConfig.getJobs() + " threads" : ""));
+                + (mWorker != null ? " with " + mConfig.getJobs() + " threads" : ""));
 
             decodeSources(outDir);
             decodeResources(outDir);
@@ -230,7 +230,7 @@ public class ApkDecoder {
                 for (String fileName : in.getDir(dirName).getFiles(true)) {
                     fileName = dirName + in.separator + fileName;
                     if (!ApkInfo.ORIGINAL_FILES_PATTERN.matcher(fileName).matches()
-                            && !dexFiles.contains(fileName) && !resFileMap.containsKey(fileName)) {
+                        && !dexFiles.contains(fileName) && !resFileMap.containsKey(fileName)) {
                         in.copyToDir(outDir, fileName);
                     }
                 }
@@ -268,7 +268,7 @@ public class ApkDecoder {
 
             for (String fileName : in.getFiles(true)) {
                 if (!ApkInfo.STANDARD_FILES_PATTERN.matcher(fileName).matches() && !dexFiles.contains(fileName)
-                        && !resFileMap.containsKey(fileName)) {
+                    && !resFileMap.containsKey(fileName)) {
                     in.copyToDir(unknownDir, fileName);
                 }
             }
@@ -286,10 +286,15 @@ public class ApkDecoder {
             }
         }
 
-        // Record uncompressed files.
+        recordUncompressedFiles(mApkInfo, mResDecoder.getResFileMap());
+
+        // Serialize apk info to file.
+        mApkInfo.save(outDir);
+    }
+
+    public static void recordUncompressedFiles(ApkInfo apkInfo, Map<String, String> resFileMap) throws AndrolibException {
         try {
-            Directory in = mApkFile.getDirectory();
-            Map<String, String> resFileMap = mResDecoder.getResFileMap();
+            Directory in = apkInfo.getApkFile().getDirectory();
             Set<String> uncompressedExts = new HashSet<>();
             Set<String> uncompressedFiles = new HashSet<>();
 
@@ -297,7 +302,7 @@ public class ApkDecoder {
                 if (in.getCompressionLevel(fileName) == 0) {
                     String ext;
                     if (in.getSize(fileName) > 0 && !(ext = FilenameUtils.getExtension(fileName)).isEmpty()
-                            && NO_COMPRESS_EXT_PATTERN.matcher(ext).matches()) {
+                        && NO_COMPRESS_EXT_PATTERN.matcher(ext).matches()) {
                         uncompressedExts.add(ext);
                     } else {
                         uncompressedFiles.add(resFileMap.getOrDefault(fileName, fileName));
@@ -318,7 +323,7 @@ public class ApkDecoder {
             }
 
             // Update apk info.
-            List<String> doNotCompress = mApkInfo.getDoNotCompress();
+            List<String> doNotCompress = apkInfo.getDoNotCompress();
             if (!uncompressedExts.isEmpty()) {
                 List<String> uncompressedExtsList = new ArrayList<>(uncompressedExts);
                 uncompressedExtsList.sort(null);
@@ -332,8 +337,5 @@ public class ApkDecoder {
         } catch (DirectoryException ex) {
             throw new AndrolibException(ex);
         }
-
-        // Serialize apk info to file.
-        mApkInfo.save(outDir);
     }
 }

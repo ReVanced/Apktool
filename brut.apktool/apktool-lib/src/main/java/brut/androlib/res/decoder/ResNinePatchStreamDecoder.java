@@ -16,6 +16,8 @@
  */
 package brut.androlib.res.decoder;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import brut.androlib.exceptions.AndrolibException;
 import brut.androlib.exceptions.NinePatchNotFoundException;
 import brut.androlib.res.data.LayoutBounds;
@@ -24,17 +26,20 @@ import brut.util.BinaryDataInputStream;
 import org.apache.commons.io.IOUtils;
 
 import javax.imageio.ImageIO;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.Raster;
 import java.awt.image.WritableRaster;
-import java.io.ByteArrayInputStream;
-import java.io.EOFException;
-import java.io.InputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
 import java.nio.ByteOrder;
 
+
 public class ResNinePatchStreamDecoder implements ResStreamDecoder {
+    private final NinePatchImageBackend imageBackend;
+
+    public ResNinePatchStreamDecoder(NinePatchImageBackend imageBackend) {
+        this.imageBackend = imageBackend;
+    }
 
     @Override
     public void decode(InputStream in, OutputStream out) throws AndrolibException {
@@ -44,28 +49,16 @@ public class ResNinePatchStreamDecoder implements ResStreamDecoder {
                 return;
             }
 
-            BufferedImage src = ImageIO.read(new ByteArrayInputStream(data));
-            int w = src.getWidth(), h = src.getHeight();
+            NinePatchImage src = imageBackend.read(data);
 
-            BufferedImage dst = new BufferedImage(w + 2, h + 2, BufferedImage.TYPE_INT_ARGB);
-            if (src.getType() == BufferedImage.TYPE_CUSTOM) {
-                Raster srcRaster = src.getRaster();
-                WritableRaster dstRaster = dst.getRaster();
-                int[] gray = null, alpha = null;
-                for (int y = 0; y < src.getHeight(); y++) {
-                    gray = srcRaster.getSamples(0, y, w, 1, 0, gray);
-                    alpha = srcRaster.getSamples(0, y, w, 1, 1, alpha);
+            int w = src.getWidth();
+            int h = src.getHeight();
 
-                    dstRaster.setSamples(1, y + 1, w, 1, 0, gray);
-                    dstRaster.setSamples(1, y + 1, w, 1, 1, gray);
-                    dstRaster.setSamples(1, y + 1, w, 1, 2, gray);
-                    dstRaster.setSamples(1, y + 1, w, 1, 3, alpha);
-                }
-            } else {
-                dst.createGraphics().drawImage(src, 1, 1, w, h, null);
-            }
+            NinePatchImage dst = imageBackend.createArgb(w + 2, h + 2);
+            imageBackend.draw(dst, src, 1, 1);
 
             NinePatchData np = findNinePatchData(data);
+
             drawHLine(dst, h + 1, np.paddingLeft + 1, w - np.paddingRight);
             drawVLine(dst, w + 1, np.paddingTop + 1, h - np.paddingBottom);
 
@@ -87,33 +80,30 @@ public class ResNinePatchStreamDecoder implements ResStreamDecoder {
                 }
             }
 
-            // Some images optionally use optical inset/layout bounds.
-            // https://developer.android.com/about/versions/android-4.3.html#OpticalBounds
             try {
                 LayoutBounds lb = findLayoutBounds(data);
+
                 for (int i = 0; i < lb.left; i++) {
-                    int x = 1 + i;
-                    dst.setRGB(x, h + 1, LayoutBounds.COLOR_TICK);
+                    dst.setArgb(1 + i, h + 1, LayoutBounds.COLOR_TICK);
                 }
+
                 for (int i = 0; i < lb.right; i++) {
-                    int x = w - i;
-                    dst.setRGB(x, h + 1, LayoutBounds.COLOR_TICK);
+                    dst.setArgb(w - i, h + 1, LayoutBounds.COLOR_TICK);
                 }
+
                 for (int i = 0; i < lb.top; i++) {
-                    int y = 1 + i;
-                    dst.setRGB(w + 1, y, LayoutBounds.COLOR_TICK);
+                    dst.setArgb(w + 1, 1 + i, LayoutBounds.COLOR_TICK);
                 }
+
                 for (int i = 0; i < lb.bottom; i++) {
-                    int y = h - i;
-                    dst.setRGB(w + 1, y, LayoutBounds.COLOR_TICK);
+                    dst.setArgb(w + 1, h - i, LayoutBounds.COLOR_TICK);
                 }
             } catch (NinePatchNotFoundException ignored) {
                 // This chunk might not exist.
             }
 
-            ImageIO.write(dst, "png", out);
+            imageBackend.writePng(dst, out);
         } catch (IOException | NullPointerException ex) {
-            // The file is not a valid image.
             throw new AndrolibException(ex);
         }
     }
@@ -132,29 +122,205 @@ public class ResNinePatchStreamDecoder implements ResStreamDecoder {
 
     private void findChunk(BinaryDataInputStream in, int magic) throws NinePatchNotFoundException, IOException {
         in.skipBytes(8);
-        for (;;) {
+
+        for (; ; ) {
             int size;
             try {
                 size = in.readInt();
             } catch (EOFException ignored) {
                 throw new NinePatchNotFoundException();
             }
+
             if (in.readInt() == magic) {
                 return;
             }
+
             in.skipBytes(size + 4);
         }
     }
 
-    private void drawHLine(BufferedImage im, int y, int x1, int x2) {
+    private void drawHLine(NinePatchImage image, int y, int x1, int x2) {
         for (int x = x1; x <= x2; x++) {
-            im.setRGB(x, y, NinePatchData.COLOR_TICK);
+            image.setArgb(x, y, NinePatchData.COLOR_TICK);
         }
     }
 
-    private void drawVLine(BufferedImage im, int x, int y1, int y2) {
+    private void drawVLine(NinePatchImage image, int x, int y1, int y2) {
         for (int y = y1; y <= y2; y++) {
-            im.setRGB(x, y, NinePatchData.COLOR_TICK);
+            image.setArgb(x, y, NinePatchData.COLOR_TICK);
+        }
+    }
+
+
+    public interface NinePatchImageBackend {
+        NinePatchImage read(byte[] data) throws IOException;
+
+        NinePatchImage createArgb(int width, int height);
+
+        void draw(NinePatchImage dst, NinePatchImage src, int dstX, int dstY);
+
+        void writePng(NinePatchImage image, OutputStream out) throws IOException;
+    }
+
+    interface NinePatchImage {
+        int getWidth();
+
+        int getHeight();
+
+        void setArgb(int x, int y, int argb);
+    }
+
+    public static final class AwtNinePatchImageBackend implements NinePatchImageBackend {
+        @Override
+        public NinePatchImage read(byte[] data) throws IOException {
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(data));
+            if (image == null) {
+                throw new IOException("Invalid image");
+            }
+
+            return new AwtNinePatchImage(image);
+        }
+
+        @Override
+        public NinePatchImage createArgb(int width, int height) {
+            return new AwtNinePatchImage(
+                new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+            );
+        }
+
+        @Override
+        public void draw(NinePatchImage dst, NinePatchImage src, int dstX, int dstY) {
+            BufferedImage srcImage = unwrap(src);
+            BufferedImage dstImage = unwrap(dst);
+
+            int w = srcImage.getWidth();
+            int h = srcImage.getHeight();
+
+            if (srcImage.getType() == BufferedImage.TYPE_CUSTOM) {
+                Raster srcRaster = srcImage.getRaster();
+                WritableRaster dstRaster = dstImage.getRaster();
+
+                int[] gray = null;
+                int[] alpha = null;
+
+                for (int y = 0; y < h; y++) {
+                    gray = srcRaster.getSamples(0, y, w, 1, 0, gray);
+                    alpha = srcRaster.getSamples(0, y, w, 1, 1, alpha);
+
+                    dstRaster.setSamples(dstX, dstY + y, w, 1, 0, gray);
+                    dstRaster.setSamples(dstX, dstY + y, w, 1, 1, gray);
+                    dstRaster.setSamples(dstX, dstY + y, w, 1, 2, gray);
+                    dstRaster.setSamples(dstX, dstY + y, w, 1, 3, alpha);
+                }
+
+                return;
+            }
+
+            Graphics2D graphics = dstImage.createGraphics();
+            try {
+                graphics.drawImage(srcImage, dstX, dstY, w, h, null);
+            } finally {
+                graphics.dispose();
+            }
+        }
+
+        @Override
+        public void writePng(NinePatchImage image, OutputStream out) throws IOException {
+            ImageIO.write(unwrap(image), "png", out);
+        }
+
+        private static BufferedImage unwrap(NinePatchImage image) {
+            return ((AwtNinePatchImage) image).image;
+        }
+
+        private static final class AwtNinePatchImage implements NinePatchImage {
+            private final BufferedImage image;
+
+            private AwtNinePatchImage(BufferedImage image) {
+                this.image = image;
+            }
+
+            @Override
+            public int getWidth() {
+                return image.getWidth();
+            }
+
+            @Override
+            public int getHeight() {
+                return image.getHeight();
+            }
+
+            @Override
+            public void setArgb(int x, int y, int argb) {
+                image.setRGB(x, y, argb);
+            }
+        }
+    }
+
+
+    public static final class AndroidNinePatchImageBackend implements NinePatchImageBackend {
+        @Override
+        public NinePatchImage read(byte[] data) throws IOException {
+            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
+            if (bitmap == null) {
+                throw new IOException("Invalid image");
+            }
+
+            if (bitmap.getConfig() != Bitmap.Config.ARGB_8888) {
+                bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
+            }
+
+            return new AndroidNinePatchImage(bitmap);
+        }
+
+        @Override
+        public NinePatchImage createArgb(int width, int height) {
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            return new AndroidNinePatchImage(bitmap);
+        }
+
+        @Override
+        public void draw(NinePatchImage dst, NinePatchImage src, int dstX, int dstY) {
+            Bitmap dstBitmap = unwrap(dst);
+            Bitmap srcBitmap = unwrap(src);
+
+            android.graphics.Canvas canvas = new android.graphics.Canvas(dstBitmap);
+            canvas.drawBitmap(srcBitmap, dstX, dstY, null);
+        }
+
+        @Override
+        public void writePng(NinePatchImage image, OutputStream out) throws IOException {
+            boolean success = unwrap(image).compress(Bitmap.CompressFormat.PNG, 100, out);
+            if (!success) {
+                throw new IOException("Failed to encode PNG");
+            }
+        }
+
+        private static Bitmap unwrap(NinePatchImage image) {
+            return ((AndroidNinePatchImage) image).bitmap;
+        }
+
+        private static final class AndroidNinePatchImage implements NinePatchImage {
+            private final Bitmap bitmap;
+
+            private AndroidNinePatchImage(Bitmap bitmap) {
+                this.bitmap = bitmap;
+            }
+
+            @Override
+            public int getWidth() {
+                return bitmap.getWidth();
+            }
+
+            @Override
+            public int getHeight() {
+                return bitmap.getHeight();
+            }
+
+            @Override
+            public void setArgb(int x, int y, int argb) {
+                bitmap.setPixel(x, y, argb);
+            }
         }
     }
 }

@@ -1,10 +1,19 @@
 apply plugin: 'com.vanniktech.maven.publish'
 
 mavenPublishing {
-    publishToMavenCentral()
-    signAllPublications()
+    publishing {
+        repositories {
+            maven {
+                url = uri("https://maven.pkg.github.com/revanced/Apktool")
+                credentials(PasswordCredentials)
+            }
+        }
+    }
 
-    coordinates("org.apktool", project.name, project.apktoolVersion)
+    signAllPublications()
+    project.extensions.getByType(SigningExtension).useGpgCmd()
+
+    coordinates("app.revanced", project.name, project.apktoolVersion)
 
     pom {
         name = "Apktool"

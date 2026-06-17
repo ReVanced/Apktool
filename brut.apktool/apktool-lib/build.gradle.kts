@@ -1,3 +1,22 @@
+import org.gradle.kotlin.dsl.support.listFilesOrdered
+
+// region Determine Android SDK location
+
+val sdkRoot: String? = System.getenv("ANDROID_SDK_ROOT")
+val androidJarPath: String =
+    if (sdkRoot == null) {
+        GradleException("Missing ANDROID_SDK_ROOT").printStackTrace()
+
+        "com.google.android:android:4.1.1.4"
+    } else {
+        File("$sdkRoot/platforms/")
+            .listFilesOrdered { it.isDirectory && it.name.startsWith("android-") }
+            .maxOfOrNull { it.name.substringAfter("android-").toDouble() }
+            .let { version -> File("$sdkRoot/platforms/android-$version/android.jar").path }
+    }
+
+// endregion
+
 dependencies {
     api(project(":brut.j.common"))
     api(project(":brut.j.util"))
@@ -10,6 +29,8 @@ dependencies {
     implementation(libs.guava)
     implementation(libs.commons.io)
     implementation(libs.commons.text)
+
+    compileOnly(files(androidJarPath))
 
     testImplementation(libs.junit)
     testImplementation(libs.xmlunit)

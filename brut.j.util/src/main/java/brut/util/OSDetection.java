@@ -18,7 +18,7 @@ package brut.util;
 
 public final class OSDetection {
     private static final String OS = System.getProperty("os.name").toLowerCase();
-    private static final String BIT = System.getProperty("sun.arch.data.model").toLowerCase();
+    private static final String BIT = System.getProperty("sun.arch.data.model");
 
     private OSDetection() {
         // Private constructor for utility class.
@@ -44,6 +44,16 @@ public final class OSDetection {
             return arch != null && arch.endsWith("64") || wow64Arch != null && wow64Arch.endsWith("64");
         }
         return BIT.equals("64");
+    }
+
+
+    public static boolean isAndroid() {
+        try {
+            Class.forName("android.app.Activity");
+            return true;
+        } catch (ClassNotFoundException ignored) {
+            return false;
+        }
     }
 
     public static String returnOS() {
